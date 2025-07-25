@@ -121,13 +121,15 @@ def get_events():
         props = page["properties"]
         event = {
             "id": page["id"],
-            "title":    safe_prop(props, "Event name",   "title"),
-            "date":     safe_prop(props, "Event date",   "date",   "start"),
-            "category": safe_prop(props, "Category",     "select", "name"),
-            "location": safe_prop(props, "Venue",        "select", "name"),
+            "title": safe_prop(props, "Event name", "title"),
+            "date": safe_prop(props, "Event date", "date", "start"),
+            "category": safe_prop(props, "Category", "select", "name"),
+            "categoryColor": safe_prop(props, "Category", "select", "color"),
+            "location": safe_prop(props, "Venue", "select", "name"),
             "maxAttendees": props.get("Capacity", {}).get("number", 0),
-            "format":   safe_prop(props, "Format",       "select", "name"),
+            "format": safe_prop(props, "Format", "select", "name"),
             "status": safe_prop(props, "Status", "status", "name"),
+            "statusColor": safe_prop(props, "Status", "status", "color"),
         }
         events.append(event)
     return jsonify(events)
