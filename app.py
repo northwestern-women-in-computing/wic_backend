@@ -92,8 +92,8 @@ notion = Client(auth=NOTION_API_KEY)
 
 def safe_prop(props, name, prop_type, subfield=None):
     """
-    - For 'title' and 'rich_text', returns the first item’s subfield (default 'plain_text').
-    - For 'select', returns the dict’s subfield (e.g. 'name').
+    - For 'title' and 'rich_text', returns the first item's subfield (default 'plain_text').
+    - For 'select', returns the dict's subfield (e.g. 'name').
     - Falls back to "" if missing.
     """
     prop = props.get(name, {})
@@ -127,6 +127,7 @@ def get_events():
             "location": safe_prop(props, "Venue",        "select", "name"),
             "maxAttendees": props.get("Capacity", {}).get("number", 0),
             "format":   safe_prop(props, "Format",       "select", "name"),
+            "status": safe_prop(props, "Status", "status", "name"),
         }
         events.append(event)
     return jsonify(events)
