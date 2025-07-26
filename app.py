@@ -1,18 +1,61 @@
-from flask import Flask, jsonify
-from flask_cors import CORS
+from flask import Flask, jsonify, make_response
+from flask_cors import CORS, cross_origin
 from dotenv import load_dotenv
 import os
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/api/*": {"origins": "*"}})
+
+@app.after_request
+def ensure_cors_headers(response):
+    # always set CORS headers, even on errors
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
+    return response
 
 NOTION_API_KEY = os.environ.get("NOTION_API_KEY")
 NOTION_DATABASE_ID = os.environ.get("NOTION_DATABASE_ID")
+SHEET_ID        = os.environ["SHEET_ID"]
+GOOGLE_API_KEY  = os.environ["GOOGLE_API_KEY"]
 
 # Notion API integration
 from notion_client import Client
 notion = Client(auth=NOTION_API_KEY)
+
+import requests
+from urllib.parse import quote
+
+@app.route('/api/leaderboard')
+@cross_origin()
+def get_leaderboard():
+    # 1) Fetch the sheet values via Sheets API
+    range_ = "'Form Responses 1'!A:E"
+
+    url = (
+        f"https://sheets.googleapis.com/v4/spreadsheets/"
+        f"{SHEET_ID}/values/{range_}?key={GOOGLE_API_KEY}"
+    )
+    resp = requests.get(url)
+    resp.raise_for_status()
+    values = resp.json().get("values", [])
+
+    # 2) Skip header and map rows → user objects
+    users = [
+        {
+          "id":    row[3],               # column D: email as unique ID
+          "name":  row[2],               # column C: your name
+          "points": int(row[1] or 0)     # column B: score
+        }
+        for row in values[1:]
+        if len(row) >= 4
+    ]
+
+    # 3) Sort descending by points
+    users.sort(key=lambda u: u["points"], reverse=True)
+
+    return jsonify(users)
 
 # Mock events data (same as frontend for now)
 # events = [
