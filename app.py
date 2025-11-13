@@ -158,24 +158,52 @@ def safe_prop(props, name, prop_type, subfield=None):
 
 @app.route('/api/events')
 def get_events():
-    results = notion.databases.query(database_id=NOTION_DATABASE_ID)
-    events = []
-    for page in results["results"]:
-        props = page["properties"]
-        event = {
-            "id": page["id"],
-            "title": safe_prop(props, "Event name", "title"),
-            "date": safe_prop(props, "Event date", "date", "start"),
-            "category": safe_prop(props, "Category", "select", "name"),
-            "categoryColor": safe_prop(props, "Category", "select", "color"),
-            "location": safe_prop(props, "Venue", "select", "name"),
-            "maxAttendees": props.get("Capacity", {}).get("number", 0),
-            "format": safe_prop(props, "Format", "select", "name"),
-            "status": safe_prop(props, "Status", "status", "name"),
-            "statusColor": safe_prop(props, "Status", "status", "color"),
-        }
-        events.append(event)
-    return jsonify(events)
+    try:
+        # Use the correct Notion API method
+        if NOTION_API_KEY is None or NOTION_DATABASE_ID is None:
+            return jsonify({"error": "Notion API credentials not configured"}), 500
+        
+        # Query database - try using pages endpoint with database filter
+        # First, let's try the direct database query endpoint
+        try:
+            results = notion.request(
+                path=f"databases/{NOTION_DATABASE_ID}/query",
+                method="POST",
+                body={"page_size": 100}
+            )
+        except Exception as query_error:
+            # If direct query fails, try using pages endpoint
+            # List pages from the database
+            results = notion.request(
+                path="search",
+                method="POST",
+                body={
+                    "filter": {
+                        "value": "page",
+                        "property": "object"
+                    },
+                    "query": NOTION_DATABASE_ID
+                }
+            )
+        events = []
+        for page in results.get("results", []):
+            props = page.get("properties", {})
+            event = {
+                "id": page.get("id", ""),
+                "title": safe_prop(props, "Event name", "title"),
+                "date": safe_prop(props, "Event date", "date", "start"),
+                "category": safe_prop(props, "Category", "select", "name"),
+                "categoryColor": safe_prop(props, "Category", "select", "color"),
+                "location": safe_prop(props, "Venue", "select", "name"),
+                "maxAttendees": props.get("Capacity", {}).get("number", 0),
+                "format": safe_prop(props, "Format", "select", "name"),
+                "status": safe_prop(props, "Status", "status", "name"),
+                "statusColor": safe_prop(props, "Status", "status", "color"),
+            }
+            events.append(event)
+        return jsonify(events)
+    except Exception as e:
+        return jsonify({"error": f"Failed to fetch events: {str(e)}"}), 500
 
 if __name__ == '__main__':
     app.run(debug=True) 
