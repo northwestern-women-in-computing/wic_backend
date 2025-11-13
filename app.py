@@ -362,6 +362,10 @@ def get_events():
             if len(events) == 0:
                 print("Available properties:", list(props.keys()))
                 print("Sample properties:", {k: list(v.keys()) if isinstance(v, dict) else type(v).__name__ for k, v in list(props.items())[:3]})
+                # Check for URL properties
+                url_props = [k for k, v in props.items() if isinstance(v, dict) and v.get("type") == "url"]
+                if url_props:
+                    print("URL properties found:", url_props)
             
             # Try to find properties with common name variations
             # Title - try common variations, or get first title-type property
@@ -408,8 +412,10 @@ def get_events():
             # Capacity - try common variations
             maxAttendees = (props.get("Capacity", {}).get("number") or
                            props.get("Max Attendees", {}).get("number") or
-                           props.get("Max Capacity", {}).get("number") or
-                           props.get("Attendees", {}).get("number") or 0)
+                           props.get("Max Capacity", {}).get("number") or 0)
+            
+            # Current attendees count - not available in Notion, default to 0
+            attendees = 0
             
             # Format - try common variations
             format_val = (safe_prop(props, "Format", "select", "name") or
@@ -422,6 +428,40 @@ def get_events():
             statusColor = (safe_prop(props, "Status", "status", "color") or
                           safe_prop(props, "Event Status", "status", "color"))
             
+            # Description - try common variations (rich_text type)
+            description = (safe_prop(props, "Description", "rich_text") or
+                          safe_prop(props, "Event Description", "rich_text") or
+                          safe_prop(props, "Details", "rich_text") or
+                          safe_prop(props, "About", "rich_text"))
+            
+            # Points - try common variations (number type)
+            points = (props.get("Points", {}).get("number") or
+                     props.get("Event Points", {}).get("number") or
+                     props.get("Reward Points", {}).get("number") or
+                     props.get("Point Value", {}).get("number") or 0)
+            
+            # Attendance Form URL - try common variations (url type)
+            # URL types in Notion are just strings, not lists
+            attendanceForm = None
+            # First, try exact property names
+            for prop_name in ["Attendance Form", "RSVP Form", "RSVP Link", "Registration Form", 
+                            "Registration Link", "Form", "Link", "RSVP", "Attendance", "RSVP URL"]:
+                prop = props.get(prop_name, {})
+                if isinstance(prop, dict) and prop.get("type") == "url":
+                    url_val = prop.get("url")
+                    if url_val:
+                        attendanceForm = url_val
+                        break
+            
+            # If not found, search all URL-type properties
+            if not attendanceForm:
+                for prop_name, prop_value in props.items():
+                    if isinstance(prop_value, dict) and prop_value.get("type") == "url":
+                        url_val = prop_value.get("url")
+                        if url_val and any(keyword in prop_name.lower() for keyword in ["form", "rsvp", "link", "attendance", "register"]):
+                            attendanceForm = url_val
+                            break
+            
             event = {
                 "id": page.get("id", ""),
                 "title": title,
@@ -430,9 +470,13 @@ def get_events():
                 "categoryColor": categoryColor,
                 "location": location,
                 "maxAttendees": maxAttendees if maxAttendees else 0,
+                "attendees": attendees if attendees else 0,
                 "format": format_val,
                 "status": status,
                 "statusColor": statusColor,
+                "description": description,
+                "points": points if points else 0,
+                "attendanceForm": attendanceForm,
             }
             events.append(event)
         
