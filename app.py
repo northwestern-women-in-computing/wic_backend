@@ -156,6 +156,133 @@ def safe_prop(props, name, prop_type, subfield=None):
 
     return ""
 
+@app.route('/api/events/debug')
+def get_events_debug():
+    """Debug endpoint to see raw Notion response and count"""
+    try:
+        if NOTION_API_KEY is None or NOTION_DATABASE_ID is None:
+            return jsonify({"error": "Notion API credentials not configured"}), 500
+        
+        all_results = []
+        start_cursor = None
+        
+        try:
+            while True:
+                query_body = {"page_size": 100}
+                if start_cursor:
+                    query_body["start_cursor"] = start_cursor
+                
+                results = notion.request(
+                    path=f"databases/{NOTION_DATABASE_ID}/query",
+                    method="POST",
+                    body=query_body
+                )
+                
+                all_results.extend(results.get("results", []))
+                
+                has_more = results.get("has_more", False)
+                start_cursor = results.get("next_cursor")
+                
+                if not has_more or not start_cursor:
+                    break
+        except Exception as e:
+            return jsonify({"error": f"Query failed: {str(e)}"}), 500
+        
+        # Analyze all pages
+        pages_info = []
+        for page in all_results:
+            props = page.get("properties", {})
+            # Try to get title
+            title = None
+            for prop_name, prop_value in props.items():
+                if isinstance(prop_value, dict) and prop_value.get("type") == "title":
+                    title = safe_prop(props, prop_name, "title")
+                    if title:
+                        break
+            
+            status = safe_prop(props, "Status", "status", "name") or safe_prop(props, "Event Status", "status", "name")
+            pages_info.append({
+                "id": page.get("id", ""),
+                "has_title": bool(title),
+                "title": title or "NO TITLE",
+                "status": status or "NO STATUS",
+                "property_names": list(props.keys())
+            })
+        
+        return jsonify({
+            "total_pages_from_notion": len(all_results),
+            "pages_info": pages_info,
+            "sample_page_properties": list(all_results[0].get("properties", {}).keys()) if all_results else []
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/events/summary')
+def get_events_summary():
+    """Get summary of events query - for debugging"""
+    try:
+        if NOTION_API_KEY is None or NOTION_DATABASE_ID is None:
+            return jsonify({"error": "Notion API credentials not configured"}), 500
+        
+        all_results = []
+        start_cursor = None
+        page_count = 0
+        
+        try:
+            while True:
+                query_body = {"page_size": 100}
+                if start_cursor:
+                    query_body["start_cursor"] = start_cursor
+                
+                results = notion.request(
+                    path=f"databases/{NOTION_DATABASE_ID}/query",
+                    method="POST",
+                    body=query_body
+                )
+                
+                all_results.extend(results.get("results", []))
+                page_count += 1
+                
+                has_more = results.get("has_more", False)
+                start_cursor = results.get("next_cursor")
+                
+                if not has_more or not start_cursor:
+                    break
+        except Exception as e:
+            return jsonify({"error": f"Query failed: {str(e)}"}), 500
+        
+        # Count events with titles
+        events_with_titles = 0
+        events_without_titles = 0
+        statuses = {}
+        
+        for page in all_results:
+            props = page.get("properties", {})
+            title = None
+            for prop_name, prop_value in props.items():
+                if isinstance(prop_value, dict) and prop_value.get("type") == "title":
+                    title = safe_prop(props, prop_name, "title")
+                    if title:
+                        break
+            
+            if title:
+                events_with_titles += 1
+                status = safe_prop(props, "Status", "status", "name") or safe_prop(props, "Event Status", "status", "name") or "No Status"
+                statuses[status] = statuses.get(status, 0) + 1
+            else:
+                events_without_titles += 1
+        
+        return jsonify({
+            "total_pages_from_notion": len(all_results),
+            "api_pages_fetched": page_count,
+            "events_with_titles": events_with_titles,
+            "events_without_titles": events_without_titles,
+            "status_breakdown": statuses,
+            "sample_property_names": list(all_results[0].get("properties", {}).keys()) if all_results else []
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/events')
 def get_events():
     try:
@@ -164,43 +291,152 @@ def get_events():
             return jsonify({"error": "Notion API credentials not configured"}), 500
         
         # Query database - try using pages endpoint with database filter
-        # First, let's try the direct database query endpoint
+        # First, let's try the direct database query endpoint with pagination
+        all_results = []
+        start_cursor = None
+        
         try:
-            results = notion.request(
-                path=f"databases/{NOTION_DATABASE_ID}/query",
-                method="POST",
-                body={"page_size": 100}
-            )
-        except Exception as query_error:
-            # If direct query fails, try using pages endpoint
-            # List pages from the database
-            results = notion.request(
-                path="search",
-                method="POST",
-                body={
-                    "filter": {
-                        "value": "page",
-                        "property": "object"
-                    },
-                    "query": NOTION_DATABASE_ID
+            while True:
+                # Query without any filters - Notion API will return all accessible pages
+                query_body = {
+                    "page_size": 100
                 }
-            )
+                if start_cursor:
+                    query_body["start_cursor"] = start_cursor
+                
+                print(f"Querying Notion with: page_size={query_body.get('page_size')}, start_cursor={'Yes' if start_cursor else 'No'}")
+                
+                results = notion.request(
+                    path=f"databases/{NOTION_DATABASE_ID}/query",
+                    method="POST",
+                    body=query_body
+                )
+                
+                page_results = results.get("results", [])
+                all_results.extend(page_results)
+                print(f"Fetched {len(page_results)} pages in this batch, total so far: {len(all_results)}")
+                
+                # Check if there are more pages
+                has_more = results.get("has_more", False)
+                start_cursor = results.get("next_cursor")
+                
+                print(f"Has more: {has_more}, Next cursor: {start_cursor[:20] if start_cursor else 'None'}...")
+                
+                if not has_more or not start_cursor:
+                    break
+        except Exception as query_error:
+            print(f"Database query failed: {str(query_error)}")
+            print("Trying search API as fallback...")
+            # If direct query fails, try using search endpoint to find all pages in the database
+            try:
+                # Search for pages that are children of this database
+                search_results = notion.request(
+                    path="search",
+                    method="POST",
+                    body={
+                        "filter": {
+                            "property": "object",
+                            "value": "page"
+                        },
+                        "sort": {
+                            "direction": "descending",
+                            "timestamp": "last_edited_time"
+                        },
+                        "page_size": 100
+                    }
+                )
+                all_results = search_results.get("results", [])
+                print(f"Search API returned {len(all_results)} pages")
+            except Exception as search_error:
+                print(f"Search API also failed: {str(search_error)}")
+                all_results = []
+        
         events = []
-        for page in results.get("results", []):
+        skipped_count = 0
+        print(f"Total pages from Notion: {len(all_results)}")
+        
+        for page in all_results:
             props = page.get("properties", {})
+            
+            # Debug: Print available property names (only for first event)
+            if len(events) == 0:
+                print("Available properties:", list(props.keys()))
+                print("Sample properties:", {k: list(v.keys()) if isinstance(v, dict) else type(v).__name__ for k, v in list(props.items())[:3]})
+            
+            # Try to find properties with common name variations
+            # Title - try common variations, or get first title-type property
+            title = (safe_prop(props, "Event name", "title") or 
+                    safe_prop(props, "Name", "title") or
+                    safe_prop(props, "Title", "title") or
+                    safe_prop(props, "Event", "title"))
+            
+            # If title not found, try to get the first property that is a title type
+            if not title:
+                for prop_name, prop_value in props.items():
+                    if isinstance(prop_value, dict) and prop_value.get("type") == "title":
+                        title = safe_prop(props, prop_name, "title")
+                        if title:
+                            break
+            
+            # Skip events without titles
+            if not title:
+                skipped_count += 1
+                print(f"Skipping page {page.get('id', 'unknown')[:20]}... - no title found. Available props: {list(props.keys())[:5]}")
+                continue
+            
+            # Date - try common variations
+            date_val = (safe_prop(props, "Event date", "date", "start") or
+                       safe_prop(props, "Date", "date", "start") or
+                       safe_prop(props, "Event Date", "date", "start") or
+                       safe_prop(props, "When", "date", "start"))
+            
+            # Category - try common variations
+            category = (safe_prop(props, "Category", "select", "name") or
+                        safe_prop(props, "Type", "select", "name") or
+                        safe_prop(props, "Event Type", "select", "name"))
+            categoryColor = (safe_prop(props, "Category", "select", "color") or
+                            safe_prop(props, "Type", "select", "color") or
+                            safe_prop(props, "Event Type", "select", "color"))
+            
+            # Location/Venue - try common variations
+            location = (safe_prop(props, "Venue", "select", "name") or
+                       safe_prop(props, "Location", "select", "name") or
+                       safe_prop(props, "Where", "select", "name") or
+                       safe_prop(props, "Venue", "rich_text") or
+                       safe_prop(props, "Location", "rich_text"))
+            
+            # Capacity - try common variations
+            maxAttendees = (props.get("Capacity", {}).get("number") or
+                           props.get("Max Attendees", {}).get("number") or
+                           props.get("Max Capacity", {}).get("number") or
+                           props.get("Attendees", {}).get("number") or 0)
+            
+            # Format - try common variations
+            format_val = (safe_prop(props, "Format", "select", "name") or
+                          safe_prop(props, "Event Format", "select", "name") or
+                          safe_prop(props, "Type", "select", "name"))
+            
+            # Status - try common variations
+            status = (safe_prop(props, "Status", "status", "name") or
+                     safe_prop(props, "Event Status", "status", "name"))
+            statusColor = (safe_prop(props, "Status", "status", "color") or
+                          safe_prop(props, "Event Status", "status", "color"))
+            
             event = {
                 "id": page.get("id", ""),
-                "title": safe_prop(props, "Event name", "title"),
-                "date": safe_prop(props, "Event date", "date", "start"),
-                "category": safe_prop(props, "Category", "select", "name"),
-                "categoryColor": safe_prop(props, "Category", "select", "color"),
-                "location": safe_prop(props, "Venue", "select", "name"),
-                "maxAttendees": props.get("Capacity", {}).get("number", 0),
-                "format": safe_prop(props, "Format", "select", "name"),
-                "status": safe_prop(props, "Status", "status", "name"),
-                "statusColor": safe_prop(props, "Status", "status", "color"),
+                "title": title,
+                "date": date_val,
+                "category": category,
+                "categoryColor": categoryColor,
+                "location": location,
+                "maxAttendees": maxAttendees if maxAttendees else 0,
+                "format": format_val,
+                "status": status,
+                "statusColor": statusColor,
             }
             events.append(event)
+        
+        print(f"Processed {len(events)} events, skipped {skipped_count} pages without titles")
         return jsonify(events)
     except Exception as e:
         return jsonify({"error": f"Failed to fetch events: {str(e)}"}), 500
