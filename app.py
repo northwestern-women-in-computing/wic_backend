@@ -21,12 +21,13 @@ def ensure_cors_headers(response):
 
 # Environment Variables
 SHEET_ID = os.environ.get("SHEET_ID", "").strip().strip('"').strip("'")
+LEAD_SHEET_ID = os.environ.get("LEAD_SHEET_ID", "").strip().strip('"').strip("'")
 
 # --- HELPER FUNCTION ---
-def fetch_csv_data(sheet_name):
+def fetch_csv_data(id, sheet_name):
     """Fetch a specific tab from Google Sheets as CSV"""
     # Use gviz API to target specific sheet names
-    url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={urllib.parse.quote(sheet_name)}"
+    url = f"https://docs.google.com/spreadsheets/d/{id}/gviz/tq?tqx=out:csv&sheet={urllib.parse.quote(sheet_name)}"
     response = urllib.request.urlopen(url)
     lines = [line.decode('utf-8') for line in response.readlines()]
     return csv.DictReader(lines)
@@ -37,14 +38,13 @@ def fetch_csv_data(sheet_name):
 @cross_origin()
 def get_leaderboard():
     try:
-        # Assuming your tab is named 'Form Responses 1'
-        reader = fetch_csv_data('Form Responses 1')
+        reader = fetch_csv_data(LEAD_SHEET_ID, 'Attendance')
         users = []
         for row in reader:
             users.append({
-                "id": row.get("Email Address", ""), # Match your CSV header
+                "id": row.get("Name", ""), # Match your CSV header
                 "name": row.get("Name", "Anonymous"),
-                "points": int(row.get("Score", 0) or 0)
+                "points": int(row.get("Points", 0) or 0)
             })
         
         users.sort(key=lambda u: u["points"], reverse=True)
@@ -57,7 +57,7 @@ def get_leaderboard():
 def get_events():
     try:
         # Assuming your tab is named 'Events'
-        reader = fetch_csv_data('Sheet1')
+        reader = fetch_csv_data(SHEET_ID, 'Sheet1')
         events = []
         for row in reader:
             status = row.get("Status", "confirmed").lower()
