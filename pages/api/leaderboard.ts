@@ -28,11 +28,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // 2. Map data and filter out rows where the name is missing
     const users = rows.slice(1)
-      .filter(row => row[0]) // Only process rows that have a name
+      .filter(row => row[1]) // Only process rows that have a name
       .map((row, index) => ({
         id: index, 
-        name: row[0].trim(), // Column A: Name
-        points: parseInt(row[1] || "0", 10), // Column B: Points
+        name: row[1].trim(), // Column A: Name
+        points: parseInt(row[0] || "0", 10), // Column B: Points
       }))
       // 3. Apply the Points Sort + Alphabetical Tie-break
       .sort((a, b) => {
