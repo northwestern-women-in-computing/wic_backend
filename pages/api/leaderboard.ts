@@ -19,7 +19,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (rows.length < 2) return res.status(200).json([]);
 
     const users = rows.slice(1)
-      .filter(row => row[2]) // 1. Filter based on COLUMN A (Name)
+      .filter(row => row[1]) // 1. Filter based on COLUMN A (Name)
       .map((row, index) => ({
         id: index, 
         name: row[1]?.trim() || "Anonymous", // 2. Map Name from COLUMN A
