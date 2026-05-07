@@ -1,35 +1,49 @@
-// pages/api/leaderboard.ts
 import type { NextApiRequest, NextApiResponse } from "next";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const { LEAD_SHEET_ID, GOOGLE_API_KEY } = process.env;
+  // We no longer need GOOGLE_API_KEY for this method
+  const { LEAD_SHEET_ID } = process.env;
   
-  if (!LEAD_SHEET_ID || !GOOGLE_API_KEY) {
-    return res.status(500).json({ error: "Missing env vars" });
+  if (!LEAD_SHEET_ID) {
+    return res.status(500).json({ error: "Missing LEAD_SHEET_ID env var" });
   }
 
-  const range = encodeURIComponent("Attendance!A:B"); 
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${LEAD_SHEET_ID}/values/${range}?key=${GOOGLE_API_KEY}`;
+  // 1. Use the gviz/tq endpoint to get CSV output
+  // Ensure 'Attendance' matches your tab name exactly
+  const sheetName = "Attendance";
+  const url = `https://docs.google.com/spreadsheets/d/${LEAD_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${sheetName}`;
 
   try {
-    const r = await fetch(url);
-    const json = await r.json();
-    const rows: string[][] = json.values || [];
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch CSV: ${response.statusText}`);
+    }
 
-    if (rows.length < 2) return res.status(200).json([]);
+    const csvText = await response.text();
+    
+    // 2. Parse CSV text into rows
+    // This regex handles commas inside quotes (standard for CSVs)
+    const rows = csvText.split(/\r?\n/).map(line => {
+      return line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(cell => 
+        cell.replace(/^"|"$/g, '').trim()
+      );
+    });
 
-    const users = rows.slice(1)
-      .filter(row => row[1]) // 1. Filter based on COLUMN A (Name)
-      .map((row, index) => ({
-        id: index, 
-        name: row[1]?.trim() || "Anonymous", // 2. Map Name from COLUMN A
-        points: parseInt(row[0] || "0", 10), // 3. Map Points from COLUMN B
-      }));
+    // 3. Remove header row and filter out empty rows
+    const dataRows = rows.slice(1).filter(row => row.length >= 2 && row[1]);
 
-    // The frontend handles the sorting, so we can just send the raw data
-    // or keep the sort here as a backup.
+    // 4. Map to your expected object structure
+    // Since you said A=Points, B=Name:
+    const users = dataRows.map((row, index) => ({
+      id: index,
+      name: row[1] || "Anonymous",     // Column B
+      points: parseInt(row[0], 10) || 0 // Column A
+    }));
+
+    // Send the clean JSON to your frontend
     res.status(200).json(users);
   } catch (e: any) {
+    console.error("CSV Leaderboard Error:", e.message);
     res.status(500).json({ error: e.message });
   }
 }
