@@ -31,14 +31,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .filter(row => row[0]) // Only process rows that have a name
       .map((row, index) => ({
         id: index, 
-        student: row[0].trim(), // Column A: Name
+        name: row[0].trim(), // Column A: Name
         points: parseInt(row[1] || "0", 10), // Column B: Points
       }))
       // 3. Apply the Points Sort + Alphabetical Tie-break
       .sort((a, b) => {
         const pointDiff = b.points - a.points;
         if (pointDiff === 0) {
-          return a.student.toLowerCase().localeCompare(b.student.toLowerCase());
+          return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
         }
         return pointDiff;
       });
