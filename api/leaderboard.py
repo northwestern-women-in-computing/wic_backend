@@ -25,7 +25,7 @@ class handler(BaseHTTPRequestHandler):
             for row in reader:
                 students.append({
                     "id": row.get("Name", ""), # Using event name as ID or a separate ID column
-                    "student": row.get("Name"),
+                    "name": row.get("Name"),
                     "points": int(row.get("Points", 0) or 0)
                 })
 
